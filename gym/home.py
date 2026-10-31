@@ -30,18 +30,26 @@ CLONE_URL = "https://github.com/codemonkeying/lean-coder.git"
 CLONE_PIN = "ea2619f"           # 0.10.119 (rehash of c8219ae after lean-coder history rewrite, same code, t85): busy-aware session takeover; 0.10.118 worker failure reasons (secrets masked), workers compact, workers inherit driver live account (t79); bump deliberately
 
 
+def _git_env() -> dict:
+    """os.environ minus every GIT_* var, so an inherited GIT_DIR (e.g. under a git hook in a
+    linked worktree) can't redirect these calls at the outer repo; never prompt."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 def clone(pin: str = CLONE_PIN, url: str = CLONE_URL) -> str:
     """Clone/fetch the public lean-coder into .gym/lean-coder and check out `pin`."""
     import subprocess
     if not (CLONE / ".git").is_dir():
         CLONE.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "clone", "-q", url, str(CLONE)], check=True)
+        subprocess.run(["git", "clone", "-q", url, str(CLONE)], check=True, env=_git_env())
     else:
-        subprocess.run(["git", "-C", str(CLONE), "fetch", "-q", "origin"], check=True)
+        subprocess.run(["git", "-C", str(CLONE), "fetch", "-q", "origin"], check=True, env=_git_env())
     if not re.fullmatch(r"[0-9a-f]{7,40}", pin or ""):
         raise ValueError(f"pin must be a commit sha, got {pin!r}")
     subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", str(CLONE), "checkout",
-                    "-q", "--detach", pin, "--"], check=True)
+                    "-q", "--detach", pin, "--"], check=True, env=_git_env())
     return clone_head()
 
 
@@ -51,9 +59,9 @@ def clone_head() -> dict | None:
     g = ["git", "-C", str(CLONE)]
     try:
         head = subprocess.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True,
-                              check=True).stdout.strip()
+                              check=True, env=_git_env()).stdout.strip()
         dirty = bool(subprocess.run(g + ["status", "--porcelain"], capture_output=True,
-                                    text=True, check=True).stdout.strip())
+                                    text=True, check=True, env=_git_env()).stdout.strip())
     except (OSError, subprocess.CalledProcessError):
         return None
     return {"head": head[:12], "pin": CLONE_PIN, "at_pin": head.startswith(CLONE_PIN),

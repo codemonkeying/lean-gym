@@ -15,6 +15,7 @@ No network, no GPU: every entry here must be runnable offline.
 """
 import argparse
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -95,13 +96,32 @@ def _cases(quick: bool):
 def _run(argv, timeout):
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(str(ROOT / d) for d in ("", "probes", "sandbox")))
     t0 = time.monotonic()
+    # stdin=DEVNULL + new session (no controlling tty): a child that reads stdin or
+    # reopens /dev/tty (lean-coder's agent does) must never wait on the operator's
+    # terminal - under the pre-push hook that showed up as "press Enter twice".
+    # The new session makes pgid == pid, so on timeout/Ctrl-C we kill the whole tree
+    # (fake routers, agent-run workers), not just the direct child.
+    p = subprocess.Popen([sys.executable, *argv], cwd=ROOT, env=env,
+                         stdin=subprocess.DEVNULL, start_new_session=True,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
     try:
-        p = subprocess.run([sys.executable, *argv], cwd=ROOT, env=env, timeout=timeout,
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
-        return p.returncode, p.stdout, time.monotonic() - t0
-    except subprocess.TimeoutExpired as e:
-        out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        return "timeout", out, time.monotonic() - t0
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _killpg(p)
+        out, _ = p.communicate()
+        return "timeout", out or "", time.monotonic() - t0
+    except BaseException:
+        _killpg(p)
+        raise
+    _killpg(p)  # reap stragglers a passing test left behind
+    return p.returncode, out, time.monotonic() - t0
+
+
+def _killpg(p):
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def main(argv=None):
