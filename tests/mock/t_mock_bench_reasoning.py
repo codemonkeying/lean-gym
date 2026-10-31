@@ -59,7 +59,7 @@ print("FAIL: " + "; ".join(fails) if fails else f"OK captured {len(out['1'][0][0
 sys.exit(1 if fails else 0)
 '''
 
-bench = need_bench()
+bench = need_bench(patched=True)
 with Mock("bench_reasoning", timeout=90) as m:
     url = m.router("think")
     p = subprocess.run([sys.executable, "-c", CHILD, str(bench), url, MODEL], cwd=ROOT,

@@ -37,11 +37,20 @@ def bench_repo():
     return p.resolve() if (p / "lean_coder.py").is_file() else None
 
 
-def need_bench() -> Path:
+def need_bench(patched: bool = False) -> Path:
+    """The core to drive, or SKIP. patched=True: the test needs the bench's
+    EVAL_KEEP_REASONING patch. A plain lean-coder from $LEANCODER_REPO (as on CI) lacks it,
+    so SKIP there; but the LOCAL bench copy must carry it - never skip there, the test
+    exists to catch the patch going missing."""
     b = bench_repo()
     if b is None:
         print("SKIP: no lean-coder core (local/lean-coder-bench or $LEANCODER_REPO)")
         sys.exit(0)
+    if patched and "reasoning_log" not in (b / "lean_coder.py").read_text(errors="replace"):
+        local = (ROOT / "local" / "lean-coder-bench").resolve()
+        if b != local:
+            print(f"SKIP: {b} is a plain lean-coder without the bench reasoning patch")
+            sys.exit(0)
     return b
 
 

@@ -33,7 +33,7 @@ print("REASONING_CHARS", n)
 print("BENCH", af.REPO)
 '''
 
-bench = need_bench()
+bench = need_bench(patched=True)
 with Mock("bench_host", timeout=90) as m:
     url = m.router("think")
     p = subprocess.run([sys.executable, "-c", CHILD, MODEL], cwd=ROOT, capture_output=True,
