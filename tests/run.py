@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """leangym canonical offline test runner - the ONE list of what "the suite" is.
 
-    python3 tests/run.py            # full suite (~5 min on a laptop)
-    python3 tests/run.py --quick    # install-time subset
+    python3 tests/run.py            # unit + selftests + mock layer (~90 s on a laptop)
+    python3 tests/run.py --quick    # install-time unit subset (no mock layer)
     python3 tests/run.py --list     # print the suite, run nothing
     python3 tests/run.py -k void    # only tests whose path contains "void"
 
 Every test runs as its own subprocess from the repo root with PYTHONPATH=<repo root>.
 A test passes iff it exits 0 within its timeout. Probe modules run with --selftest.
+A test that prints a line starting "SKIP:" and exits 0 is reported as skipped (e.g. a
+mock test that needs the gitignored lean-coder bench on a public checkout).
 Exit code: 0 all passed, 1 any failure, 2 bad usage / nothing selected.
 No network, no GPU: every entry here must be runnable offline.
 """
@@ -56,7 +58,18 @@ FULL = QUICK + [
     "tests/t_sandbox_bwrap.py",
 ]
 
-# NOT here (need a fake router, a live host, or args): tests/manual/*.
+# MOCK layer: end-to-end tests against fake model servers (tests/mock/fake_*_router.py)
+# on free ports, all state in a temp dir. Offline; the bench-driven ones SKIP without
+# local/lean-coder-bench or $LEANCODER_REPO. Run by default, not by --quick.
+MOCK = [
+    "tests/mock/t_mock_run_window.py",
+    "tests/mock/t_mock_loop_window.py",
+    "tests/mock/t_mock_drain_loop.py",
+    "tests/mock/t_mock_resume.py",
+    "tests/mock/t_mock_bench_host.py",
+    "tests/mock/t_mock_bench_reasoning.py",
+    "tests/mock/t_mock_sampling.py",
+]
 
 # Probe modules: `<file> --selftest` must exit 0.
 SELFTESTS = [
@@ -75,6 +88,7 @@ def _cases(quick: bool):
     cases = [(t, [t]) for t in (QUICK if quick else FULL)]
     if not quick:
         cases += [(f"{s} --selftest", [s, "--selftest"]) for s in SELFTESTS]
+        cases += [(f"[mock] {t}", [t]) for t in MOCK]
     return cases
 
 
@@ -92,7 +106,7 @@ def _run(argv, timeout):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--quick", action="store_true", help="install-time subset only")
+    ap.add_argument("--quick", action="store_true", help="install-time unit subset only (no mock layer)")
     ap.add_argument("--list", action="store_true", help="print the selected tests and exit")
     ap.add_argument("-k", metavar="SUBSTR", help="only tests whose name contains SUBSTR")
     ap.add_argument("--timeout", type=int, default=TIMEOUT, help=f"per-test seconds (default {TIMEOUT})")
@@ -110,7 +124,8 @@ def main(argv=None):
         return 0
 
     missing = [n for n, argv_ in cases if not (ROOT / argv_[0]).is_file()]
-    fails = []
+    fails, skips = [], []
+    t_all = time.monotonic()
     for name, argv_ in cases:
         if name in missing:
             print(f"MISSING {name}")
@@ -118,6 +133,11 @@ def main(argv=None):
             continue
         rc, out, dt = _run(argv_, a.timeout)
         ok = rc == 0
+        skip = ok and next((ln.strip() for ln in out.splitlines() if ln.startswith("SKIP:")), None)
+        if skip:
+            skips.append(name)
+            print(f"skip {name}  ({dt:.1f}s) {skip}", flush=True)
+            continue
         print(f"{'ok  ' if ok else 'FAIL'} {name}  ({dt:.1f}s{'' if ok else f', rc={rc}'})", flush=True)
         if not ok or a.v:
             for line in out.rstrip().splitlines()[-8:]:
@@ -125,7 +145,11 @@ def main(argv=None):
         if not ok:
             fails.append(name)
 
-    print(f"\n{len(cases) - len(fails)}/{len(cases)} passed" + (f"; FAILED: {' '.join(fails)}" if fails else ""))
+    passed = len(cases) - len(fails) - len(skips)
+    print(f"\n{passed}/{len(cases)} passed, {len(skips)} skipped, {len(fails)} failed"
+          f"  ({time.monotonic() - t_all:.0f}s)"
+          + (f"\nSKIPPED: {' '.join(skips)}" if skips else "")
+          + (f"\nFAILED: {' '.join(fails)}" if fails else ""))
     return 1 if fails else 0
 
 

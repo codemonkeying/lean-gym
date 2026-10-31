@@ -27,12 +27,21 @@ The repo installs git hooks (`git config core.hooksPath .githooks`, already set)
 
 ```bash
 bash tests/_sweep.sh                 # hygiene lint: unicode / secrets / PII / private names
-python3 tests/run.py                 # the full offline suite (~5 min); --quick for the fast subset
+python3 tests/run.py                 # unit + selftests + mock layer (~90 s); --quick = unit subset only
 ```
 
 `tests/run.py` holds the only canonical test list. If you add a test, add it there
 (`FULL`, or `QUICK` if it is fast and should run at install time). It runs each test
 from the repo root with `PYTHONPATH=<repo>`, so tests must not hard-code paths.
+
+**Mock layer** (`MOCK`, files in `tests/mock/`): end-to-end tests against fake model
+servers (`tests/mock/fake_think_router.py`, `fake_slow_router.py`) - run windows, the
+drain-loop state machine, SIGTERM recovery, and bench host/reasoning/sampling guards.
+Build new ones on `tests/mock/_mock.py`: all state in a temp dir, free ports picked at
+runtime, only your own child processes killed, a per-test timeout, explicit assertions.
+A test that needs the gitignored lean-coder bench (`local/lean-coder-bench` or
+`$LEANCODER_REPO`) prints `SKIP: <reason>` and exits 0 without it; the runner reports it
+as skipped. Tests that need a live model host do not belong in the suite.
 
 ## Workflow
 

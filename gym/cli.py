@@ -15,6 +15,7 @@ install/preflight scripts call them to gate a run and to stamp provenance.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import shutil
@@ -204,9 +205,11 @@ def _cert_suite(*, model, suite_id, rigor, n, tasks, host, provider, think,
     from gym import run as _run
     from gym.agent import factory
 
+    # SystemExit is caught too: agent_fixture raises it at import when no lean-coder core is
+    # found, which used to escape `gym drain` and wedge the job 'running' (rc 1, no JSON).
     try:
         reg = registry()
-    except Exception as exc:                        # noqa - a broken task tree is a harness fault
+    except (Exception, SystemExit) as exc:          # noqa - a broken task tree is a harness fault
         return None, (f"gym run failed: {type(exc).__name__}: {exc}",
                       "could not load the task registry - no result was written")
     suite = reg.get(suite_id)
@@ -216,10 +219,12 @@ def _cert_suite(*, model, suite_id, rigor, n, tasks, host, provider, think,
     try:
         make_agent = factory(host=host, model=model, think=think, provider=provider)
         make_agent.model = model                   # stamped into the result doc
-        doc = _run.run_suite_cert(
-            suite, make_agent, rigor=rigor, ws_root=ws_root,
-            n=n, tasks=tasks or None, harness_sha=harness_sha_disk(), log=log)
-    except Exception as exc:                        # noqa - keep the CLI contract on a crash
+        # the lean-coder agent prints chatter to stdout; keep stdout for the --json value
+        with contextlib.redirect_stdout(sys.stderr):
+            doc = _run.run_suite_cert(
+                suite, make_agent, rigor=rigor, ws_root=ws_root,
+                n=n, tasks=tasks or None, harness_sha=harness_sha_disk(), log=log)
+    except (Exception, SystemExit) as exc:          # noqa - keep the CLI contract on a crash
         return None, (f"gym run failed: {type(exc).__name__}: {exc}",
                       "a harness fault, not a model verdict - no result was written")
     return doc, None

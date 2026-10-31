@@ -55,7 +55,7 @@ run_gate() {
 
 # Hygiene lint (unicode / secrets / PII / private names) over tracked source.
 run_gate "sweep (hygiene)"    bash tests/_sweep.sh
-# Full offline test suite (~5 min). Pushes are public, so run everything, not the subset.
+# Full offline suite: unit + selftests + mock layer (~90 s). Pushes are public, so run everything, not the subset.
 run_gate "tests (full)"       python3 tests/run.py
 
 # Scan the TREE at each pushed tip + the new commit MESSAGES for private names/words.

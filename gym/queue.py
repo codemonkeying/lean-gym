@@ -279,7 +279,16 @@ def incomplete_tasks(doc: dict, requested: Optional[list] = None):
 
     A job is incomplete iff either list is non-empty."""
     tasks = doc.get("tasks") or {}
-    under = sorted(p for p, pr in tasks.items() if (pr or {}).get("pending"))
+
+    def _redrive(pr):
+        pr = pr or {}
+        if pr.get("pending"):
+            return True
+        # void-starved: scored NOTHING, every run void (scoring keeps n == 0 out of
+        # `pending` and reports it as VOID). A dead router must re-drive, not mark 'done'.
+        return (not pr.get("certified") and pr.get("n_scored") == 0
+                and (pr.get("void") or 0) > 0)
+    under = sorted(p for p, pr in tasks.items() if _redrive(pr))
     want = set(requested) if requested else set(tasks)
     missing = sorted(want - set(tasks))
     return under, missing
