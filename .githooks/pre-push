@@ -11,15 +11,33 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 
 # Nothing to check on a branch deletion (refs pushed as all-zero sha). Read stdin
 # (<local ref> <local sha> <remote ref> <remote sha>) and bail if every ref is a delete.
+# `newc` = the commits this push publishes for the first time: everything reachable from
+# the pushed tips that THIS remote ($1) does not already have - its tracking refs plus the
+# remote shas it reported on stdin. Commits another remote has still count as new here.
+remote="${1:-}"
 deleting_only=1
 pushed=""
-while read -r _local_ref local_sha _remote_ref _remote_sha; do
+known=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
 	case "$local_sha" in
 		*[!0]*) deleting_only=0; pushed="$pushed $local_sha" ;;
 	esac
+	case "$remote_sha" in
+		*[!0]*) git cat-file -e "$remote_sha^{commit}" 2>/dev/null && known="$known ^$remote_sha" ;;
+	esac
 done
 [ "$deleting_only" = 1 ] && exit 0
-
+# Pushing to a bare URL: $1 is not a remote name, so no tracking refs match it. Fall back
+# to excluding what ANY remote has (and say so) rather than treating all history as new.
+if [ -n "$remote" ] && git remote get-url "$remote" >/dev/null 2>&1; then
+	exclude="--remotes=$remote"
+else
+	echo "pre-push: '$remote' is not a named remote - treating commits on any remote as known" >&2
+	exclude="--remotes"
+fi
+# shellcheck disable=SC2086
+newc=$(git rev-list $pushed $known --not "$exclude" --) \
+	|| { echo "pre-push: git rev-list failed - cannot compute new commits" >&2; exit 1; }
 fail=0
 run_gate() {
 	name="$1"; shift
@@ -35,8 +53,8 @@ run_gate() {
 
 # Hygiene lint (unicode / secrets / PII / private names) over tracked source.
 run_gate "sweep (hygiene)"    bash tests/_sweep.sh
-# Offline test suite - the install-time subset (fast, covers the cert math + contracts).
-run_gate "tests (quick)"      python3 tests/run.py --quick
+# Full offline test suite (~5 min). Pushes are public, so run everything, not the subset.
+run_gate "tests (full)"       python3 tests/run.py
 
 # Scan the TREE at each pushed tip + the new commit MESSAGES for private names/words.
 # We scan the tip tree (not historical -p diffs) so that legitimately deleting a file
@@ -52,23 +70,65 @@ tip_names() {
 	for sha in $pushed; do
 		if [ -f tests/.private_names ]; then
 			grep -v '^[[:space:]]*$' tests/.private_names > "$pat"
-			hits="$hits$(git grep -niF -f "$pat" "$sha" -- 2>/dev/null | grep -Fiv 'community' | grep -Fv 'sweep-ok' | head -10)"
+			hits="$hits$(git grep -niI "$sha" -e '' -- 2>/dev/null | grep -Fv 'sweep-ok' | sed 's/[Cc][Oo][Mm][Mm][Uu][Nn][Ii][Tt][Yy]//g' | grep -iF -f "$pat" | cut -d: -f2-3 | head -10)"
 		fi
 		if [ -f tests/.private_words ]; then
 			grep -v '^[[:space:]]*$' tests/.private_words > "$pat"
-			hits="$hits$(git grep -niwF -f "$pat" "$sha" -- 2>/dev/null | grep -Fv 'sweep-ok' | head -10)"
+			hits="$hits$(git grep -niwF -f "$pat" "$sha" -- 2>/dev/null | grep -Fv 'sweep-ok' | cut -d: -f2-3 | head -10)"
 		fi
 		# commit messages carried with this push
 		msg=$(git log --format='%an %ae%n%cn %ce%n%B' "$sha" -1)
 		if [ -f tests/.private_words ]; then
 			grep -v '^[[:space:]]*$' tests/.private_words > "$pat"
-			hits="$hits$(printf '%s\n' "$msg" | grep -niwF -f "$pat" | head -5)"
+			printf '%s\n' "$msg" | grep -qiwF -f "$pat" && hits="$hits
+message of $(git rev-parse --short "$sha")"
 		fi
 	done
 	rm -f "$pat"
 	[ -z "$hits" ] || { printf '%s\n' "$hits"; return 1; }
 }
 run_gate "names (tip tree)"    tip_names
+
+# The tip-tree scan only sees the final files. A private word can still be published in
+# a commit MESSAGE, an author line, or an intermediate DIFF that a later commit removed.
+# Scan exactly the commits this push publishes for the first time (not older history),
+# so deleting a file that once held a private word never blocks a push.
+history_names() {
+	[ -n "$newc" ] || return 0
+	[ -f tests/.private_names ] || [ -f tests/.private_words ] || return 0
+	log=$(mktemp); np=$(mktemp); wp=$(mktemp); hits=""
+	[ -f tests/.private_names ] && grep -v '^[[:space:]]*$' tests/.private_names > "$np"
+	[ -f tests/.private_words ] && grep -v '^[[:space:]]*$' tests/.private_words > "$wp"
+	for c in $newc; do
+		# -m --first-parent: also show what a merge commit itself introduced.
+		# `sweep-ok` is honoured only on added diff lines, never in messages/authors.
+		git show -p -m --first-parent --format='%an %ae%n%cn %ce%n%B' "$c" \
+			| grep -v '^+.*sweep-ok' | sed 's/[Cc][Oo][Mm][Mm][Uu][Nn][Ii][Tt][Yy]//g' > "$log"
+		if { [ -s "$np" ] && grep -qiF -f "$np" "$log"; } \
+			|| { [ -s "$wp" ] && grep -qiwF -f "$wp" "$log"; }; then
+			hits="$hits $(git rev-parse --short "$c")"
+		fi
+	done
+	rm -f "$log" "$np" "$wp"
+	[ -z "$hits" ] || { echo "private name/word in new commit(s):$hits (message, author or diff)"; return 1; }
+}
+run_gate "names (new commits)" history_names
+
+# Review gate: every commit this push publishes must carry a `Reviewed-by:` trailer
+# (e.g. `Reviewed-by: worker-12345`), recording that the change had an independent
+# review before it left this machine. It proves a review step happened, not that it was
+# good. Merge commits are exempt. Bypass (deliberate, never routine): --no-verify.
+reviewed() {
+	missing=""
+	for c in $newc; do
+		[ "$(git rev-list --parents -n1 "$c" | wc -w)" -gt 2 ] && continue
+		git log -1 --format='%B' "$c" | grep -qiE '^Reviewed-by:[[:space:]]*[^[:space:]]' \
+			|| missing="$missing $(git log -1 --format='%h %s' "$c" | cut -c1-70)
+"
+	done
+	[ -z "$missing" ] || { printf 'commits without a Reviewed-by: trailer:\n%s' "$missing"; return 1; }
+}
+run_gate "review trailer"      reviewed
 
 # VERSION file and gym.__version__ must agree - a mismatch means a half-finished
 # release. leangym is lockstep-versioned with leancoder: the number is the leancoder

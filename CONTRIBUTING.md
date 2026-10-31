@@ -22,7 +22,7 @@
 The repo installs git hooks (`git config core.hooksPath .githooks`, already set):
 
 - **pre-commit** blocks the never-ship trees from ever entering a commit.
-- **pre-push** runs the gates below and refuses the push on any failure
+- **pre-push** runs the sweep, the full suite, a private-name scan of the tip tree AND of every newly published commit (messages, authors, diffs), the `Reviewed-by:` trailer check and the version match and refuses the push on any failure
   (emergency bypass: `git push --no-verify`).
 
 ```bash
@@ -35,6 +35,20 @@ python3 tests/run.py                 # the full offline suite (~5 min); --quick 
 from the repo root with `PYTHONPATH=<repo>`, so tests must not hard-code paths.
 
 ## Workflow
+
+Every change follows: **issue -> branch -> change -> independent review -> PR -> merge.**
+
+1. Open an issue describing the change (`tools/gh_post.py issue ...`).
+2. Branch as `<issue#>-<slug>`.
+3. Make the change; run `bash tests/_sweep.sh` and `python3 tests/run.py`.
+4. Get an independent review of the diff. Fix every HIGH finding and re-review.
+5. Add a `Reviewed-by: <reviewer>` trailer to each commit - the pre-push hook refuses
+   commits without one.
+6. Push, open the PR with `Closes #<issue>` (`tools/gh_post.py pr ...`), merge on green.
+
+Issue / PR / comment text goes through `tools/gh_post.py`, which runs the same leak
+scan as the sweep before anything is posted - the git hooks never see API text, and
+PRs can't be deleted once public.
 
 Work on a branch and open a pull request - even for your own changes. PRs run the
 `suite` workflow (sweep + full suite against the current public leancoder), keep the
