@@ -65,7 +65,9 @@ def _review_from_model(model, title, diff):
         "changes, style). If it looks good, say so briefly. Do not restate the diff. Do "
         "not invent issues.\n\n"
         f"PR title: {title}\n\n```diff\n{diff[:DIFF_LIMIT]}\n```")
-    payload = {"model": model, "max_tokens": 1024, "temperature": 0.2,
+    # Reasoning models spend part of the budget thinking before emitting content, so
+    # give enough room that the visible review survives.
+    payload = {"model": model, "max_tokens": 3072, "temperature": 0.2,
                "messages": [{"role": "user", "content": prompt}]}
     req = urllib.request.Request(
         f"{KILO_BASE}/chat/completions", data=json.dumps(payload).encode(), method="POST",
@@ -76,7 +78,10 @@ def _review_from_model(model, title, diff):
     choices = out.get("choices") or []
     if not choices:
         raise RuntimeError(f"model returned no choices: {str(out)[:200]}")
-    return (choices[0].get("message") or {}).get("content", "").strip()
+    msg = choices[0].get("message") or {}
+    # Some free reasoning models leave `content` null and put text in `reasoning`.
+    text = msg.get("content") or msg.get("reasoning") or ""
+    return text.strip()
 
 
 def main():
