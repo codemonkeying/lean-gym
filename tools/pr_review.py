@@ -20,6 +20,7 @@ Exit codes: 0 posted (or nothing to do), 2 bad usage/env, 1 model/API error.
 from __future__ import annotations
 
 import json
+import re
 import os
 import sys
 import urllib.error
@@ -63,7 +64,8 @@ def _review_from_model(model, title, diff):
         "reply in GitHub-flavoured markdown with: a one-line summary verdict, then at most "
         "five bullet points of concrete, actionable findings (bugs, missing tests, risky "
         "changes, style). If it looks good, say so briefly. Do not restate the diff. Do "
-        "not invent issues.\n\n"
+        "not invent issues. Wrap the final review, and nothing else, in an XML element "
+        "named review.\n\n"
         f"PR title: {title}\n\n```diff\n{diff[:DIFF_LIMIT]}\n```")
     # Reasoning models spend part of the budget thinking before emitting content, so
     # give enough room that the visible review survives.
@@ -79,9 +81,70 @@ def _review_from_model(model, title, diff):
     if not choices:
         raise RuntimeError(f"model returned no choices: {str(out)[:200]}")
     msg = choices[0].get("message") or {}
-    # Some free reasoning models leave `content` null and put text in `reasoning`.
-    text = msg.get("content") or msg.get("reasoning") or ""
-    return text.strip()
+    return extract_review(msg.get("content"), msg.get("reasoning"))
+
+
+_OPEN = re.compile(r"<review>", re.I)
+_CLOSE = re.compile(r"</review>", re.I)
+_THINK = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>", re.S | re.I)
+_THINK_OPEN = re.compile(r"<think(?:ing)?>.*", re.S | re.I)
+_THINK_CLOSE = re.compile(r"^.*</think(?:ing)?>", re.S | re.I)
+MIN_REVIEW = 20       # shorter than this is an echo / fragment, not a review
+MAX_REVIEW = 6000
+
+
+def _strip_think(text):
+    """Remove closed, unclosed (to end) and lone-closing think blocks."""
+    return _THINK_CLOSE.sub("", _THINK_OPEN.sub("", _THINK.sub("", text)))
+
+
+def _last_block(src):
+    """Text of the last <review> block. An unclosed final block counts up to the end
+    (truncated output); returns "" when no opening tag exists."""
+    opens = list(_OPEN.finditer(src))
+    if not opens:
+        return ""
+    tail = src[opens[-1].end():]
+    close = _CLOSE.search(tail)
+    if close:
+        return tail[:close.start()].strip()
+    # unclosed last block: if an earlier block closed, prefer that complete one
+    for o in reversed(opens[:-1]):
+        t = src[o.end():]
+        c = _CLOSE.search(t)
+        if c:
+            return t[:c.start()].strip()
+    return tail.strip()
+
+
+def _sanitize(text):
+    text = text.replace("@", "@\u200b")       # no pings to users/teams
+    if len(text) > MAX_REVIEW:
+        text = text[:MAX_REVIEW].rstrip() + "\n\n<sub>(truncated)</sub>"
+    return text
+
+
+def extract_review(content, reasoning):
+    """Return only the final review text, or "" if there is none to post.
+
+    Free reasoning models sometimes leave `content` null and put everything in
+    `reasoning`. That field is the model thinking aloud, so it is used only through an
+    explicit review block. Content is used tagged if possible, else with any think
+    block (closed, unclosed, or a lone closing tag) removed. Anything shorter than
+    MIN_REVIEW is treated as an echo/fragment and dropped."""
+    # Think blocks go first, so review tags drafted inside them never count.
+    c = _strip_think(content or "")
+    block = _last_block(c)
+    if len(block) >= MIN_REVIEW:
+        return _sanitize(block)
+    if _OPEN.search(c):
+        return ""            # tagged but unusable: never fall back to the drafts around it
+    c = c.strip()
+    if len(c) >= MIN_REVIEW:
+        return _sanitize(c)
+    # Reasoning is thinking aloud and may draft the review element while planning, so it
+    # is never posted - not even a closed block. No content -> no review.
+    return ""
 
 
 def main():
@@ -108,16 +171,27 @@ def main():
         review = _review_from_model(model, title, diff)
     except (urllib.error.URLError, RuntimeError, ValueError) as e:
         _die(f"model review failed: {e}", 1)
+    existing = _gh("GET", f"/repos/{repo}/issues/{pr}/comments?per_page=100", token)
+    # Only our own comment (a human quoting the marker must not be PATCHed -> 403).
+    mine = next((c for c in existing if MARKER in (c.get("body") or "")
+                 and (c.get("user") or {}).get("type") == "Bot"), None)
     if not review:
-        _die("model returned an empty review", 1)
+        # No usable final answer (e.g. only reasoning came back). Never post raw
+        # chain-of-thought; advisory bot, so not a CI failure. Only mark an existing
+        # comment stale - don't create a placeholder on the first run.
+        if not mine:
+            print("pr_review: model gave no final review - not posting")
+            return
+        review = ("_No usable review was produced for this commit "
+                  "(the model returned no final answer)._")
+        print("pr_review: model gave no final review - marking comment as stale")
 
     note = ("\n\n<sub>Diff truncated for review.</sub>" if truncated else "")
-    comment = (f"{MARKER}\n### Automated review ({model})\n\n{review}{note}\n\n"
+    sha = ((pr_obj.get("head") or {}).get("sha") or "")[:7]
+    head = f"### Automated review ({model})" + (f" - `{sha}`" if sha else "")
+    comment = (f"{MARKER}\n{head}\n\n{review}{note}\n\n"
                f"<sub>Advisory only - a free model's second opinion, not a merge gate.</sub>")
 
-    # Replace our own previous review comment if present, else create a new one.
-    existing = _gh("GET", f"/repos/{repo}/issues/{pr}/comments?per_page=100", token)
-    mine = next((c for c in existing if MARKER in (c.get("body") or "")), None)
     if mine:
         _gh("PATCH", f"/repos/{repo}/issues/comments/{mine['id']}", token, {"body": comment})
         print(f"pr_review: updated comment {mine['id']}")
