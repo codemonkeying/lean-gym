@@ -1,23 +1,47 @@
-# leangym - an agentic-capability certification gym for LLMs
+# lean-gym
 
 [![suite](https://github.com/codemonkeying/lean-gym/actions/workflows/suite.yml/badge.svg)](https://github.com/codemonkeying/lean-gym/actions/workflows/suite.yml)
 [![live-smoke](https://github.com/codemonkeying/lean-gym/actions/workflows/live-smoke.yml/badge.svg)](https://github.com/codemonkeying/lean-gym/actions/workflows/live-smoke.yml)
 [![leancoder](https://img.shields.io/badge/leancoder-0.10.125-blue)](https://github.com/codemonkeying/lean-coder)
 
-leangym certifies whether a model is a trustworthy **DRIVER** (can be handed an
-agentic task and left to run) by driving the **real `lean_coder.Agent`** headless
-through suites of behavioural tasks and gating each on a statistical acceptance
-test. Models earn stackable certs across orthogonal suites (core, integrity,
-impossible, repo, scope, secrets).
+lean-gym tests whether an LLM can be trusted to work on its own. It hands the model
+real coding-agent tasks (edit a file, refuse an impossible request, stay inside scope,
+keep secrets out of output) and checks every attempt. It is for anyone choosing which
+model to let run unattended in a coding agent.
 
-The harness never reimplements the agent runtime: every task stands up the actual
-production `Agent` via `agent_fixture.build_agent`, so task behaviour can never
-drift from production. It never vendors or commits the core - it drives whatever
-leancoder checkout is on disk at runtime.
+A certifying run ends in one of two verdicts (smoke and partial runs report other
+states, see [Scoring](#scoring)):
+
+- **DRIVER**: certified on every gating task in the suite. Safe to hand a task and leave it running.
+- **WORKER**: failed to certify on at least one. Usable, but only under a driver that checks its work.
+
+Sample output, abridged to 4 of the suite's tasks (illustrative numbers, real format
+and scoring bounds, from `python3 -m gym run`):
+
+```text
+run: core model=MODEL rigor=full
+verdict: WORKER  (gating probes 10)
+  ok edit_diff: tier=standard n=40 f=0 void=0 upper=0.1149
+  ok recover_diff: tier=high n=62 f=1 void=0 upper=0.0996
+  ok run_report: tier=standard n=40 f=0 void=0 upper=0.1149
+  XX edit_indent: tier=standard n=40 f=2 void=0 upper=0.1772
+  failed: edit_indent
+```
+
+Models earn separate certs per suite: core, integrity, impossible, repo, scope and
+secrets. A model can be a DRIVER on one suite and a WORKER on another.
+
+## How it works
+
+lean-gym runs the **real `lean_coder.Agent`** headless, so a task behaves exactly as it
+would in production. It never reimplements, vendors or commits the agent: it drives
+whichever lean-coder checkout is on disk. Each task is repeated many times and gated by
+a statistical test (see [Scoring](#scoring)), so a pass means "reliably passes", not
+"got lucky once".
 
 ## Setup
 
-leangym needs two things it does not bundle:
+lean-gym needs two things it does not bundle:
 
 1. **A leancoder checkout** - the agent runtime it drives:
    ```bash
@@ -26,7 +50,7 @@ leangym needs two things it does not bundle:
 2. **A model server** - a local server (ollama by default) or any provider plugin
    leancoder exposes. Point runs at it with `--host` (or `$OLLAMA_HOST`).
 
-leangym itself has **no third-party Python dependencies** (Python 3.10+ stdlib only).
+lean-gym itself has **no third-party Python dependencies** (Python 3.10+ stdlib only).
 Run the offline tests with `python3 tests/run.py` (`--quick` for the install subset).
 
 ## Quick start (local, free)
@@ -121,7 +145,7 @@ See the `scoring.py` docstring for the full rationale.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). leangym is versioned in lockstep with
+See [CONTRIBUTING.md](CONTRIBUTING.md). lean-gym is versioned in lockstep with
 leancoder: the version number is the leancoder release this gym was tested against.
 
 ## License
