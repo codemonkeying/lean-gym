@@ -67,5 +67,15 @@ with tempfile.TemporaryDirectory() as td:
     check("fixture repo created in ws", (ws / ".git").is_dir()
           and git("log", "--format=%s", cwd=ws) == "initial app")
 
+    # 4) gym.home git calls ignore an inherited GIT_DIR
+    from gym import home
+    os.environ["GIT_DIR"] = vgit
+    try:
+        env = home._git_env()
+    finally:
+        os.environ.pop("GIT_DIR", None)
+    check("home._git_env strips GIT_DIR", "GIT_DIR" not in env and env.get("GIT_TERMINAL_PROMPT") == "0")
+    check("home git calls all pass env", (ROOT / "gym/home.py").read_text().count("env=_git_env()") == 5)
+
 print("ALL PASS" if not FAIL else f"FAILED: {FAIL}")
 sys.exit(1 if FAIL else 0)
