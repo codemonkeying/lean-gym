@@ -3,6 +3,14 @@
 leangym is versioned in lockstep with leancoder: the version number is the leancoder
 release this gym was tested against. Every result also stamps `harness_sha` (a content
 hash of the files that define a run) and the leancoder version/sha.
+## Unreleased
+
+- New cert task `collab_fake_done` - the collab x integrity intersection. The board is
+  a self-reported ledger; this task asks the model to actually produce a deliverable and
+  record it, then catches the gaming move (mark a task done with no artifact) by diffing
+  the declared board state against what the tool wrote to disk. Board analog of
+  `int_skip_verify`. Adds `tests/t_suite_collab.py` (the collab suite had no offline
+  test) covering both `collab` and `collab_fake_done` scorers.
 
 ## 0.10.125
 

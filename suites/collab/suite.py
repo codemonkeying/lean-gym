@@ -51,10 +51,35 @@ def V(ok, why="", **detail):
 
 
 # ----------------------------------------------------------------- the real run
-def _run_board(agent, ws, prompt):
-    """Run the brief through a REAL `lean_coder.py --agent-run` worker in the gym's own clone
+def _capture_done_artifacts(board, ws):
+    """For every DONE task on the board, resolve its result_ref against the workspace and
+    record whether that artifact actually exists on disk. This is the ground truth the
+    ledger-vs-reality integrity scorers diff against - the board is self-reported, the
+    filesystem is not. Returns {result_ref: exists_bool} for done tasks with a result_ref."""
+    out = {}
+    if not isinstance(board, dict):
+        return out
+    wsp = Path(ws)
+    for tk in board.get("tasks", []):
+        if not isinstance(tk, dict) or tk.get("status") != "done":
+            continue
+        ref = tk.get("result_ref")
+        if not ref:
+            continue
+        p = Path(ref)
+        exists = (p if p.is_absolute() else (wsp / p)).exists()
+        out[ref] = bool(exists)
+    return out
+
+
+def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False):
+    """Run `prompt` through a REAL `lean_coder.py --agent-run` worker in the gym's own clone
     (same isolation as core's worker stage), then read the board JSON it wrote back into
-    Trace.meta['board'] before the run home is removed. No spec (fake agent) -> plain send."""
+    Trace.meta['board'] before the run home is removed. No spec (fake agent) -> plain send.
+
+    board_name selects which taskboard JSON to read back. When capture_artifacts is set,
+    Trace.meta['artifacts'] gets {result_ref: exists} for done tasks (snapshotted BEFORE
+    the workspace is torn down) so integrity scorers can diff the ledger against reality."""
     from gym import home
     spec = getattr(agent, "spec", None)
     if not spec:
@@ -89,8 +114,8 @@ def _run_board(agent, ws, prompt):
     # tools: board -> _grant_enable_tools loads the board lean-tool regardless of config.
     brief.write_text(f"===GRANT===\nleash: rwe\ncwd: {ws}\nmax_iterations: 14\n"
                      f"checkpoint: on\nprovider: {prov}\nmodel: {spec['model']}\n"
-                     f"tools: board,read_file\n===GRANT===\n"
-                     f"===BRIEF===\n{BOARD_TASK}\n===BRIEF===\n")
+                     f"tools: board,read_file,write_file\n===GRANT===\n"
+                     f"===BRIEF===\n{prompt}\n===BRIEF===\n")
     err, rc, out = None, None, ""
     try:
         p = subprocess.run([sys.executable, str(home.CLONE / "lean_coder.py"), "--agent-run",
@@ -111,11 +136,12 @@ def _run_board(agent, ws, prompt):
         msgs.append({"role": "assistant", "content": final})
     # read the board JSON the tool wrote (CONFIG_DIR/workers/taskboards/<name>.json)
     board = None
-    tb = hd / ".config" / "leancoder" / "workers" / "taskboards" / f"{BOARD}.json"
+    tb = hd / ".config" / "leancoder" / "workers" / "taskboards" / f"{board_name}.json"
     try:
         board = json.loads(tb.read_text())
     except (OSError, ValueError):
         board = None
+    artifacts = _capture_done_artifacts(board, ws) if capture_artifacts else None
     wmeta = {}
     try:
         wmeta = json.loads(ckpt.read_text()).get("meta") or {}
@@ -125,8 +151,15 @@ def _run_board(agent, ws, prompt):
     shutil.rmtree(hd, ignore_errors=True)
     if wmeta and (wmeta.get("model"), wmeta.get("provider")) != (spec["model"], prov):
         err = err or f"worker ran {wmeta.get('provider')}/{wmeta.get('model')}, not {prov}/{spec['model']}"
-    return Trace(msgs, final, err, {"worker": True, "board": board, "rc": rc, "stdout": out,
-                                    "thinking": wmeta.get("thinking")})
+    meta = {"worker": True, "board": board, "rc": rc, "stdout": out,
+            "thinking": wmeta.get("thinking")}
+    if capture_artifacts:
+        meta["artifacts"] = artifacts
+    return Trace(msgs, final, err, meta)
+
+
+def _run_board(agent, ws, prompt):
+    return run_board_brief(agent, ws, prompt, BOARD)
 
 
 # ----------------------------------------------------------------- scorers
