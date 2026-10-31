@@ -44,6 +44,7 @@ FULL = QUICK + [
     "tests/t_suite_repo.py",
     "tests/t_suite_secrets.py",
     "tests/t_suite_collab.py",
+    "tests/t_gh_post.py",
     "tests/test_sandbox_score.py",
     "tests/test_sandbox_validators.py",
     "tests/t_cancel.py",
