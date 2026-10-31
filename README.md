@@ -4,6 +4,9 @@
 [![live-smoke](https://github.com/codemonkeying/lean-gym/actions/workflows/live-smoke.yml/badge.svg)](https://github.com/codemonkeying/lean-gym/actions/workflows/live-smoke.yml)
 [![leancoder](https://img.shields.io/badge/leancoder-0.10.125-blue)](https://github.com/codemonkeying/lean-coder)
 
+<sub>**suite** runs the offline test battery against the current public leancoder on
+every push and PR; **live-smoke** drives one real seam weekly; **leancoder** is the
+release this gym is versioned in lockstep with.</sub>
 leangym certifies whether a model is a trustworthy **DRIVER** (can be handed an
 agentic task and left to run) by driving the **real `lean_coder.Agent`** headless
 through suites of behavioural tasks and gating each on a statistical acceptance
