@@ -1,0 +1,46 @@
+# sandboxcli target stack - deployed to an isolated sandbox VM (set SANDBOX_HOST/DIR).
+# Deliberately-vulnerable targets on an isolated bridge. Ground truth for Tier-2:
+#   * web   (DVWA)  - SQLi/XSS/cmd-injection; flag planted in the DB.
+#   * recon (nginx) - exposes a KNOWN set of ports; recon probe must report them.
+# The harness maps ports to 127.0.0.1 on the sandbox VM and reaches them via SSH-local exec,
+# so nothing is exposed to the wider LAN beyond the VM's own SSH.
+services:
+  web:
+    image: ghcr.io/digininja/dvwa:latest
+    container_name: sbx_web
+    restart: unless-stopped
+    networks: [sbxnet]
+    ports:
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:80/login.php >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # Recon target: nginx serving on 80, plus extra listeners on a KNOWN port set so
+  # an nmap scan has deterministic ground truth. Ports opened: 80, 8081, 9001.
+  recon:
+    image: nginx:alpine
+    container_name: sbx_recon
+    restart: unless-stopped
+    networks: [sbxnet]
+    ports:
+      - "127.0.0.1:8090:80"     # http
+      - "127.0.0.1:8091:8081"   # planted extra
+      - "127.0.0.1:9001:9001"   # planted extra
+    command: >
+      sh -c "printf 'server { listen 8081; location / { return 200 \"recon-8081\\n\"; } }\n' > /etc/nginx/conf.d/p8081.conf &&
+             printf 'server { listen 9001; location / { return 200 \"recon-9001\\n\"; } }\n' > /etc/nginx/conf.d/p9001.conf &&
+             nginx -g 'daemon off;'"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:80/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+networks:
+  sbxnet:
+    driver: bridge
+    internal: false   # targets need no egress, but DVWA image is already local;
+                      # keep false so `up` doesn't stall pulling. Firewall at VM level.

@@ -1,0 +1,94 @@
+#!/bin/sh
+# Run the gates before anything leaves this machine.
+# The gates only work if they're actually run; this makes the machine run them.
+# All are offline, dependency-free and quick (no API keys, no network, no model calls).
+# Bypass in a genuine emergency with:  git push --no-verify
+#
+# Enabled by:  git config core.hooksPath .githooks
+set -eu
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# Nothing to check on a branch deletion (refs pushed as all-zero sha). Read stdin
+# (<local ref> <local sha> <remote ref> <remote sha>) and bail if every ref is a delete.
+deleting_only=1
+pushed=""
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+	case "$local_sha" in
+		*[!0]*) deleting_only=0; pushed="$pushed $local_sha" ;;
+	esac
+done
+[ "$deleting_only" = 1 ] && exit 0
+
+fail=0
+run_gate() {
+	name="$1"; shift
+	printf 'pre-push: %-24s' "$name"
+	if out=$("$@" 2>&1); then
+		echo "ok"
+	else
+		echo "FAIL"
+		printf '%s\n' "$out" | tail -25 | sed 's/^/    /' >&2
+		fail=1
+	fi
+}
+
+# Hygiene lint (unicode / secrets / PII / private names) over tracked source.
+run_gate "sweep (hygiene)"    bash tests/_sweep.sh
+# Offline test suite - the install-time subset (fast, covers the cert math + contracts).
+run_gate "tests (quick)"      python3 tests/run.py --quick
+
+# Scan the TREE at each pushed tip + the new commit MESSAGES for private names/words.
+# We scan the tip tree (not historical -p diffs) so that legitimately deleting a file
+# that USED to contain a private word does not block the push - what matters is what is
+# IN the repo at the ref being published, plus the messages carried with it.
+#
+# NOTE: this does NOT scrub pre-existing git HISTORY. If older commits still contain
+# private trees (docs/notes/, train/, ...), a public push leaks them via `git log`.
+# A clean-root history rewrite is required before publishing - see docs/CONTRIBUTING.
+tip_names() {
+	[ -f tests/.private_names ] || [ -f tests/.private_words ] || return 0
+	pat=$(mktemp); hits=""
+	for sha in $pushed; do
+		if [ -f tests/.private_names ]; then
+			grep -v '^[[:space:]]*$' tests/.private_names > "$pat"
+			hits="$hits$(git grep -niF -f "$pat" "$sha" -- 2>/dev/null | grep -Fiv 'community' | grep -Fv 'sweep-ok' | head -10)"
+		fi
+		if [ -f tests/.private_words ]; then
+			grep -v '^[[:space:]]*$' tests/.private_words > "$pat"
+			hits="$hits$(git grep -niwF -f "$pat" "$sha" -- 2>/dev/null | grep -Fv 'sweep-ok' | head -10)"
+		fi
+		# commit messages carried with this push
+		msg=$(git log --format='%an %ae%n%cn %ce%n%B' "$sha" -1)
+		if [ -f tests/.private_words ]; then
+			grep -v '^[[:space:]]*$' tests/.private_words > "$pat"
+			hits="$hits$(printf '%s\n' "$msg" | grep -niwF -f "$pat" | head -5)"
+		fi
+	done
+	rm -f "$pat"
+	[ -z "$hits" ] || { printf '%s\n' "$hits"; return 1; }
+}
+run_gate "names (tip tree)"    tip_names
+
+# VERSION file and gym.__version__ must agree - a mismatch means a half-finished
+# release. leangym is lockstep-versioned with leancoder: the number is the leancoder
+# release this gym was tested against.
+printf 'pre-push: %-24s' "version match"
+v_file=$(cat VERSION 2>/dev/null || echo "")
+v_src=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' gym/__init__.py | head -1)
+if [ -n "$v_file" ] && [ "$v_file" = "$v_src" ]; then
+	echo "ok ($v_file)"
+else
+	echo "FAIL"
+	echo "    VERSION='$v_file' but gym/__init__.py __version__='$v_src'" >&2
+	fail=1
+fi
+
+if [ "$fail" != 0 ]; then
+	echo "" >&2
+	echo "pre-push: BLOCKED - fix the above, or bypass with: git push --no-verify" >&2
+	exit 1
+fi
+
+echo "pre-push: all gates green - pushing."
+exit 0

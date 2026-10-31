@@ -1,0 +1,56 @@
+name: suite
+
+# Offline gates: the hygiene sweep + the full test suite, run against the current
+# public leancoder. No network to model providers, no API keys, no cost. This is the
+# badge that proves leangym works against the leancoder it targets.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout leangym
+        uses: actions/checkout@v4
+
+      - name: Checkout leancoder (the agent runtime under test)
+        uses: actions/checkout@v4
+        with:
+          repository: codemonkeying/lean-coder
+          path: .leancoder
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps (bubblewrap for the sandbox tests)
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          [ -f requirements.txt ] && pip install -r requirements.txt || true
+          # Test-only tools: pyflakes (validator check) and pytest (repo F2P hidden tests).
+          pip install pyflakes pytest
+
+      - name: Hygiene sweep
+        run: bash tests/_sweep.sh
+
+      - name: Version lockstep (leangym VERSION vs leancoder VERSION)
+        run: |
+          gym_v=$(cat VERSION)
+          lc_v=$(cat .leancoder/VERSION)
+          echo "leangym=$gym_v  leancoder=$lc_v"
+          if [ "$gym_v" != "$lc_v" ]; then
+            echo "::warning::leangym $gym_v is not lockstep with leancoder $lc_v"
+          fi
+
+      - name: Offline suite
+        env:
+          LEANCODER_REPO: ${{ github.workspace }}/.leancoder
+        run: python3 tests/run.py

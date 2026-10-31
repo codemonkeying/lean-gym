@@ -1,0 +1,4 @@
+#!/bin/sh
+# leangym shim: probes (RUN1) name `python`; some boxes only ship python3.
+# evalcli prepends this dir to PATH at startup, so agent shell tools always find it.
+exec python3 "$@"

@@ -1,0 +1,41 @@
+{
+ "_doc": "Hidden cases as DATA. The scorer (parent) sends only fn/args/kwargs to the child runner and evaluates `expect` itself. Encoding: {\"R\": [a, b]} = Range(a, b); {\"T\": [...]} = tuple. expect: {\"eq\": v} | {\"truthy\": true} | {\"falsy\": true} | {\"raises\": \"Name\"} | {\"unmutated\": true} (args unchanged after call). Mirrors test_hidden_*.py.",
+ "test_hidden_f2p.py::test_merge_nested_range": [
+  {"fn": "merge", "args": [[{"R": [1, 10]}, {"R": [3, 4]}]], "expect": {"eq": [{"R": [1, 10]}]}}],
+ "test_hidden_f2p.py::test_merge_nested_then_more": [
+  {"fn": "merge", "args": [[{"R": [1, 10]}, {"R": [2, 3]}, {"R": [11, 12]}, {"R": [20, 25]}, {"R": [21, 21]}]],
+   "expect": {"eq": [{"R": [1, 12]}, {"R": [20, 25]}]}}],
+ "test_hidden_f2p.py::test_compress_nested": [
+  {"fn": "compress", "args": ["1-10,3-4"], "expect": {"eq": "1-10"}}],
+ "test_hidden_f2p.py::test_total_length_nested": [
+  {"fn": "total_length", "args": [[{"R": [1, 10]}, {"R": [2, 3]}]], "expect": {"eq": 10}}],
+ "test_hidden_f2p.py::test_merge_nested_then_adjacent": [
+  {"fn": "merge", "args": [[{"R": [1, 10]}, {"R": [2, 3]}, {"R": [11, 11]}]], "expect": {"eq": [{"R": [1, 11]}]}}],
+
+ "test_hidden_p2p.py::test_merge_empty": [
+  {"fn": "merge", "args": [[]], "expect": {"eq": []}}],
+ "test_hidden_p2p.py::test_merge_adjacent_and_gap": [
+  {"fn": "merge", "args": [[{"R": [1, 3]}, {"R": [4, 6]}, {"R": [8, 9]}]], "expect": {"eq": [{"R": [1, 6]}, {"R": [8, 9]}]}}],
+ "test_hidden_p2p.py::test_merge_does_not_mutate_input": [
+  {"fn": "merge", "args": [[{"R": [5, 6]}, {"R": [1, 2]}]], "expect": {"unmutated": true}}],
+ "test_hidden_p2p.py::test_merge_partial_overlap_unsorted": [
+  {"fn": "merge", "args": [[{"R": [5, 9]}, {"R": [1, 6]}, {"R": [-3, -1]}]], "expect": {"eq": [{"R": [-3, -1]}, {"R": [1, 9]}]}}],
+ "test_hidden_p2p.py::test_parse_spaces_and_negatives": [
+  {"fn": "parse", "args": [" 1 - 3 , -2 "], "expect": {"eq": [{"R": [1, 3]}, {"R": [-2, -2]}]}},
+  {"fn": "parse", "args": ["a"], "expect": {"raises": "ParseError"}}],
+ "test_hidden_p2p.py::test_format_sep_and_compress": [
+  {"fn": "format_ranges", "args": [[{"R": [1, 1]}, {"R": [3, 4]}]], "kwargs": {"sep": ";"}, "expect": {"eq": "1;3-4"}},
+  {"fn": "compress", "args": ["7,5,6,1-2"], "expect": {"eq": "1-2,5-7"}}],
+ "test_hidden_p2p.py::test_contains_and_range_errors": [
+  {"fn": "contains", "args": [[{"R": [1, 3]}], 2], "expect": {"truthy": true}},
+  {"fn": "contains", "args": [[{"R": [1, 3]}], 4], "expect": {"falsy": true}},
+  {"fn": "Range", "args": [3, 1], "expect": {"raises": "ValueError"}}],
+ "test_hidden_p2p.py::test_merge_duplicate_ranges": [
+  {"fn": "merge", "args": [[{"R": [1, 3]}, {"R": [1, 3]}]], "expect": {"eq": [{"R": [1, 3]}]}}],
+ "test_hidden_p2p.py::test_merge_same_start_shorter_first_after_sort": [
+  {"fn": "merge", "args": [[{"R": [1, 5]}, {"R": [1, 2]}]], "expect": {"eq": [{"R": [1, 5]}]}}],
+ "test_hidden_p2p.py::test_contains_nested_input": [
+  {"fn": "contains", "args": [[{"R": [1, 10]}, {"R": [3, 4]}], 7], "expect": {"truthy": true}},
+  {"fn": "contains", "args": [[{"R": [1, 10]}, {"R": [3, 4]}], 3], "expect": {"truthy": true}},
+  {"fn": "contains", "args": [[{"R": [1, 10]}, {"R": [3, 4]}], 11], "expect": {"falsy": true}}]
+}

@@ -1,0 +1,10 @@
+# leangym has NO third-party Python dependencies - it runs on the Python 3.11+
+# standard library alone (tomllib is used, hence 3.11+).
+#
+# Its real dependencies are external, not pip-installable here:
+#   1. a leancoder checkout on disk  - the agent runtime leangym drives.
+#      Point at it with $LEANCODER_REPO or leangym.toml (see leangym.toml.example).
+#   2. an ollama server              - https://ollama.com (for local models).
+#
+# Hosted-provider modules (e.g. Anthropic) are driven THROUGH leancoder's own
+# provider plugins; their deps live in the leancoder repo, not here.

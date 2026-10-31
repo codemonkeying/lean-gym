@@ -1,0 +1,10 @@
+# Copy to `leangym.toml` and edit. leangym.toml is gitignored (it points at YOUR
+# machine); this .example is the committed template.
+#
+# leangym is a SEPARATE repo from leancoder. It never vendors or commits the core -
+# it drives whatever lean_coder.py is on disk at runtime, and the provenance receipt
+# stamps leancoder_version + sha so every cert records which core produced it.
+
+# Where your leancoder checkout lives.
+# Precedence at runtime:  $LEANCODER_REPO  >  this file  >  ~/lean-coder (default).
+leancoder_repo = "~/lean-coder"
