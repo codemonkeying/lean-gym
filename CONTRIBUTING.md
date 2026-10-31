@@ -40,6 +40,11 @@ Work on a branch and open a pull request - even for your own changes. PRs run th
 `suite` workflow (sweep + full suite against the current public leancoder), keep the
 history reviewable, and are how this project moves. Merge once CI is green.
 
+Every same-repo PR also gets an advisory automated review from a free model
+(`pr-review` workflow -> `tools/pr_review.py`), posted as a comment. It is a cheap
+second opinion, never a merge gate - free-model-only by construction, so it never
+spends against the account.
+
 ## Releases - lockstep with leancoder
 
 leangym is versioned in lockstep with [leancoder](https://github.com/codemonkeying/lean-coder):
