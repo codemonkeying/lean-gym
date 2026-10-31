@@ -158,6 +158,10 @@ check(under == ["p_defer"], "incomplete_probes: only pending is under_drained")
 check(missing == [], "incomplete_probes: nothing missing when all present")
 under, missing = Q.incomplete_tasks(doc, requested=["p_ok", "p_gone"])
 check(missing == ["p_gone"], "incomplete_probes: requested-but-absent is missing")
+under, _ = Q.incomplete_tasks({"tasks": {
+    "p_void": {"certified": False, "pending": False, "n_scored": 0, "void": 3},
+    "p_zero": {"certified": False, "pending": False, "n_scored": 0, "void": 0}}})
+check(under == ["p_void"], "incomplete_probes: all-void (void-starved) is under_drained")
 
 
 # ---- summary ----------------------------------------------------------------
