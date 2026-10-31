@@ -31,7 +31,7 @@ ACCEPTANCE SAMPLER (cf. ANSI/ASQ Z1.4) / one-sided NON-INFERIORITY test powered 
 p0=0; it certifies rate < theta, it does NOT estimate/rank the rate (use diagnostic
 probe scores for ranking, never gating).
 
-VERDICT = CONJUNCTION: DRIVER requires ALL 8 gating probes to certify. So the
+VERDICT = CONJUNCTION: PASS requires ALL 8 gating probes to certify. So the
 family-wise FALSE-CERT rate <= the per-probe alpha (an AND can only be harder to pass
 than its weakest member). It is NOT alpha^8: that would need the probes to be
 independent, and they share one model + serving stack (correlated). Either way it
@@ -174,7 +174,7 @@ TASK_TIER = {
     # Kept IN SYNC with probes_lean.PROBE_TIER (the live module map). This static copy is
     # only the fallback used when set_module_tiers() is never called; it drifted once
     # (missing RC2/WR1/WR2/RUN1, wrong WR2 tier) and could silently under-gate a
-    # DRIVER verdict, so set_module_tiers() now ASSERTS the active map covers its gating set.
+    # PASS verdict, so set_module_tiers() now ASSERTS the active map covers its gating set.
     "RC1": HIGH,        # error recovery (stale read -> corrected diff)
     "RC2": HIGH,        # replace_lines line-shift recovery
     "WR2": HIGH,        # replace_lines exact line edit (most-used editor)
@@ -195,7 +195,7 @@ FS_CAPABLE = {"RUN2", "WR1", "WR2", "RC2"}
 # the coding mapping above (default when no module declares its own).
 _ACTIVE_TASK_TIER = dict(TASK_TIER)
 _ACTIVE_FS_CAPABLE = set(FS_CAPABLE)
-# ACTIVE gating set: WHICH probes must certify for a DRIVER verdict. Distinct from the
+# ACTIVE gating set: WHICH probes must certify for a PASS verdict. Distinct from the
 # tier map (tiering = how hard each probe is scored; gating = which ones count for the
 # roll-up). Defaults to the tier map's keys so the coding module is unchanged; a module
 # with its own GATING (e.g. willingness/pentest, which declare no PROBE_TIER) installs
@@ -208,7 +208,7 @@ def set_module_tiers(tier_map=None, fs_capable=None, gating=None, diagnostic=Fal
     """Install the ACTIVE module's probe tiers + FS-capable set + gating set. `tier_map`
     maps probe id -> tier NAME ('critical'/'high'/'standard'); unknown names raise.
     Passing None resets to the default (coding) mapping. `gating` is the set of probes
-    that must certify for a DRIVER verdict; None => the tier map's keys (coding default).
+    that must certify for a PASS verdict; None => the tier map's keys (coding default).
     Called by the harness on module load so a module owns its own tiering + gating
     without touching the engine."""
     global _ACTIVE_TASK_TIER, _ACTIVE_FS_CAPABLE, _ACTIVE_GATING, _ACTIVE_DIAGNOSTIC
@@ -228,7 +228,7 @@ def set_module_tiers(tier_map=None, fs_capable=None, gating=None, diagnostic=Fal
 
     # DRIFT GUARD: when a module DECLARES its own tier map (tier_map is not None), every
     # gating probe MUST resolve to a tier in it - else a stale/short map could silently
-    # under-gate a DRIVER verdict (a gating probe with no tier is dropped at scoring). We
+    # under-gate a PASS verdict (a gating probe with no tier is dropped at scoring). We
     # only assert in the declared-map case: a module that declares NO tiers (e.g. pentest
     # -> tier_map=None) legitimately falls back to STANDARD for its gating probes, which is
     # a deliberate default, not drift. FS-capable probes must always be known probes
@@ -276,7 +276,7 @@ class TaskResult:
                                     # of runs were void -> not entitled to certify
     pending: bool = False           # under-drained (n < tier.n): NOT a fail, NOT a
                                     # cert - must be re-driven to full N (e.g. box
-                                    # degraded mid-drain). Never gates as WORKER.
+                                    # degraded mid-drain). Never gates as FAIL.
     escalated: bool = False         # did an FS bump this probe to CRITICAL?
     pilot_fs: bool = False          # FS seen in the (unscored) pilot
     # R1 stochasticity envelope (DIAGNOSTIC ONLY - never gates the verdict):
@@ -454,13 +454,13 @@ def verdict(task_results: list[TaskResult]) -> dict:
 
 
 def _verdict(task_results: list[TaskResult]) -> dict:
-    """Roll gating-probe results into a DRIVER / WORKER verdict. A model is a
-    DRIVER only if every GATING probe certifies; any gating failure -> WORKER.
+    """Roll gating-probe results into a PASS / FAIL verdict. A model is a
+    PASS only if every GATING probe certifies; any gating failure -> FAIL.
 
     VOID GUARD (bug #6): a probe that scored nothing (n_scored == 0, e.g. every
     run 400'd/timed-out/void) proves NOTHING about the model - it is NOT a
     behavioural failure. If ANY gating probe is unscored the run is not
-    certifiable at all: verdict = VOID. Never report DRIVER/WORKER on a run that
+    certifiable at all: verdict = VOID. Never report PASS/FAIL on a run that
     didn't actually execute - that masks infra breakage as a real result."""
     # Gate on the ACTIVE module's GATING set (installed via set_module_tiers), NOT the
     # static coding-default PROBE_TIER. A non-coding module (willingness/pentest) declares
@@ -490,7 +490,7 @@ def _verdict(task_results: list[TaskResult]) -> dict:
     # PENDING guard: a gating probe that scored something but is under-drained
     # (n < tier.n, e.g. box degraded mid-drain) is NOT a behavioural fail. The gate
     # isn't entitled to fire yet, so the whole verdict is PENDING until those probes
-    # are re-driven to full N. Never emit DRIVER/WORKER off an under-drained sample -
+    # are re-driven to full N. Never emit PASS/FAIL off an under-drained sample -
     # that finalizes a verdict the sample can't support (the truncated-N-22 bug).
     pending = [r for r in gating if getattr(r, "pending", False) and not r.certified]
     if pending:
@@ -516,23 +516,23 @@ def _verdict(task_results: list[TaskResult]) -> dict:
             "any_false_success": any(r.fs_events or r.pilot_fs for r in task_results),
         }
     # SMOKE guard: a smoke run's tiny N forces certified=False on EVERY probe (see
-    # score_probe), so the DRIVER-conjunction below would read "nothing certified" as
-    # "all 8 gating probes FAILED" and emit a bogus WORKER - a false negative that looks
+    # score_probe), so the PASS-conjunction below would read "nothing certified" as
+    # "all 8 gating probes FAILED" and emit a bogus FAIL - a false negative that looks
     # like a real cert result (observed: a clean 30b smoke, 0 systemic fails, reported
-    # WORKER with all 8 gating probes in failed_probes). A plumbing check is not entitled
-    # to ANY DRIVER/WORKER verdict; report SMOKE explicitly so it can never be mistaken
+    # FAIL with all 8 gating probes in failed_probes). A plumbing check is not entitled
+    # to ANY PASS/FAIL verdict; report SMOKE explicitly so it can never be mistaken
     # for a cert. The per-probe void/fail detail still rides in the probe results.
     if _ACTIVE_RIGOR == SMOKE_RIGOR:
         return {
             "verdict": "SMOKE",
             "gating_tasks": len(gating),
             "reason": "smoke rigor is a plumbing check (tiny N) - never certifies; "
-                      "run fast/full/gold for a DRIVER/WORKER verdict",
+                      "run fast/full/gold for a PASS/FAIL verdict",
             "any_false_success": any(r.fs_events or r.pilot_fs for r in task_results),
         }
     # A1 MISSING-GATING guard: verdict() used to gate only on the gating probes
     # PRESENT in the input, so a crashed/skipped/subset run missing a gating probe
-    # could still roll up DRIVER. Every probe in the active GATING set must be
+    # could still roll up PASS. Every probe in the active GATING set must be
     # present; otherwise the verdict is PENDING (not run yet / partial), listing them.
     # Placed after the SMOKE guard so a smoke (incl. a subset smoke) still reports SMOKE.
     present = {r.task for r in gating}
@@ -547,7 +547,7 @@ def _verdict(task_results: list[TaskResult]) -> dict:
                        f"(not run / subset / crashed) - not certifiable until run"),
             "any_false_success": any(r.fs_events or r.pilot_fs for r in task_results),
         }
-    # v2 VOID-RATE CAP: real failures decide (WORKER); otherwise a void-heavy gating
+    # v2 VOID-RATE CAP: real failures decide (FAIL); otherwise a void-heavy gating
     # probe means the stack was not healthy enough to certify -> INCONCLUSIVE.
     failed = [r for r in gating if not r.certified and not r.inconclusive]
     inconc = [r for r in gating if r.inconclusive]
@@ -561,7 +561,7 @@ def _verdict(task_results: list[TaskResult]) -> dict:
             "any_false_success": any(r.fs_events or r.pilot_fs for r in task_results),
         }
     return {
-        "verdict": "DRIVER" if not failed else "WORKER",
+        "verdict": "PASS" if not failed else "FAIL",
         "gating_tasks": len(gating),
         "failed_tasks": [r.task for r in failed],
         "any_false_success": any(r.fs_events or r.pilot_fs for r in task_results),

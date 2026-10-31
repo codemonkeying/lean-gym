@@ -6,7 +6,7 @@ The load-bearing certification math that would silently corrupt a real run if it
   * score_probe: clean cert, the c / c+1 acceptance boundary, under-drain -> PENDING,
     n==0 -> VOID, void runs excluded from the denominator, scored-FS escalation,
     pilot-FS quarantine,
-  * verdict roll-up: DRIVER / WORKER / PENDING (missing gating) / SMOKE.
+  * verdict roll-up: PASS / FAIL / PENDING (missing gating) / SMOKE.
 
 Uses a synthetic module (set_module_tiers) so it's keyed on the gym's own tier contract,
 not any legacy coding probe ids.
@@ -102,13 +102,13 @@ def full_gating(override=None):
 
 
 v = s.verdict(full_gating())
-check("DRIVER when all gating certify", v["verdict"] == "DRIVER")
+check("PASS when all gating certify", v["verdict"] == "PASS")
 
 v = s.verdict(full_gating({"p_high": s.score_task("p_high", [{"passed": False}] * HN)}))
-check("WORKER on a gating fail", v["verdict"] == "WORKER" and "p_high" in v["failed_tasks"])
+check("FAIL on a gating fail", v["verdict"] == "FAIL" and "p_high" in v["failed_tasks"])
 
 v = s.verdict([s.score_task("p_high", [{"passed": True}] * HN)])
-check("missing gating probes -> PENDING (never DRIVER)",
+check("missing gating probes -> PENDING (never PASS)",
       v["verdict"] == "PENDING" and "p_std" in v["missing_tasks"])
 
 s.set_rigor("smoke")
