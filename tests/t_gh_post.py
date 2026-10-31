@@ -64,5 +64,57 @@ check("free -free", pr._is_free("reflection/beam-free"))
 check("paid refused", not pr._is_free("claude-sonnet-4-6"))
 check("paid refused 2", not pr._is_free("gpt-4o"))
 
+ex = pr.extract_review
+R = "Looks good overall; one nit in foo.py."
+check("tagged content", ex(f"x <review>{R}</review>", None) == R)
+check("reasoning never posted", ex(None, f"thinking... <review>{R}</review>") == "")
+check("raw reasoning not posted", ex(None, "Here's a thinking process: 1. ...") == "")
+check("untagged content kept", ex(R, None) == R)
+check("think block stripped", ex(f"<think>hmm</think>{R}", None) == R)
+check("last tag wins", ex(f"<review>draft draft draft draft</review> <review>{R}</review>", None) == R)
+check("echoed instruction dropped", ex(None, "wrap it between <review> and </review> tags") == "")
+check("unclosed think dropped", ex(f"{R} <think>secret chain of thought", None) == R)
+check("lone close think", ex(f"chain of thought here</think>{R}", None) == R)
+check("unclosed review -> tail", ex(f"drafts... <review>{R}", None) == R)
+check("tagged unusable, no draft fallback", ex("lots of draft notes <review></review>", None) == "")
+check("uppercase tags", ex(f"<REVIEW>{R}</REVIEW>", None) == R)
+check("mentions neutralised", "@team" not in ex(f"<review>{R} cc @team</review>", None))
+check("length capped", len(ex("<review>" + "x" * 9000 + "</review>", None)) < 6100)
+
+check("review inside think ignored", ex(f"<think>x <review>draft draft draft draft</review></think>{R}", None) == R)
+check("cut-off think with review dropped", ex("<think>long chain of thought <review>partial partial", None) == "")
+check("reasoning unclosed not posted", ex(None, f"thinking <review>{R} and more drafts") == "")
+
+# main(): stubbed _gh / model, no network
+import os as _os
+calls = []
+def run_main(review, comments, head_sha="abc1234def"):
+    calls.clear()
+    def gh(method, path, token, body=None, accept=None):
+        calls.append((method, path, body))
+        if method == "GET" and path.endswith("/comments?per_page=100"):
+            return comments
+        if accept and "diff" in accept:
+            return "diff --git a/x b/x\n+1\n"
+        if method == "GET":
+            return {"title": "t", "head": {"sha": head_sha} if head_sha else {}}
+        return {}
+    pr._gh = gh
+    pr._review_from_model = lambda *a: review
+    _os.environ.update(GITHUB_TOKEN="t", GITHUB_REPOSITORY="o/r", PR_NUMBER="1")
+    pr.main()
+    return [c for c in calls if c[0] in ("POST", "PATCH")]
+w = run_main("", [])
+check("main: empty, no prior comment -> no post", w == [])
+w = run_main("", [{"id": 7, "body": pr.MARKER + " old", "user": {"type": "Bot"}}])
+check("main: empty, prior comment -> marked stale", len(w) == 1 and w[0][0] == "PATCH"
+      and "No usable review" in w[0][2]["body"])
+w = run_main(R, [{"id": 8, "body": "quoting " + pr.MARKER, "user": {"type": "User"}}])
+check("main: human quote not patched", len(w) == 1 and w[0][0] == "POST")
+w = run_main(R, [])
+check("main: review posted with sha", len(w) == 1 and w[0][0] == "POST" and "`abc1234`" in w[0][2]["body"])
+w = run_main(R, [], head_sha=None)
+check("main: no sha -> no empty code span", "``" not in w[0][2]["body"])
+
 print("ALL PASS" if not FAIL else f"FAILED: {FAIL}")
 sys.exit(1 if FAIL else 0)
