@@ -150,7 +150,7 @@ def _t_outcome():
 
 def _t_run_doc(monkeypatched):
     # end-to-end verdict + doc schema with a patched per-run primitive (decouples the
-    # verdict/doc test from agent telemetry): `edit` passes, `recover` fails -> WORKER. The
+    # verdict/doc test from agent telemetry): `edit` passes, `recover` fails -> FAIL. The
     # patched primitive receives the cert checkpoint GROUP (tiered cp first); probe id is
     # the stage id.
     verdicts = {"edit": True, "recover": False}
@@ -165,16 +165,16 @@ def _t_run_doc(monkeypatched):
     assert doc["model"] == "m1" and doc["module"] == "demo", doc
     assert doc["harness_sha"] == "abc123" and doc["rigor"]["profile"] == "fast"
     assert set(doc["tasks"]) == {"edit", "recover"}, doc["tasks"].keys()
-    assert doc["verdict"]["verdict"] == "WORKER" and doc["verdict"]["failed_tasks"] == ["recover"], doc["verdict"]
+    assert doc["verdict"]["verdict"] == "FAIL" and doc["verdict"]["failed_tasks"] == ["recover"], doc["verdict"]
     assert doc["token_cost"]["total"] > 0 and "slowest_task" in doc["timing"]
     assert "fs_detection" in doc and doc["harness_sha"] == "abc123"
     # UTC Z-stamped timing
     assert doc["timing"]["started_iso"].endswith("Z"), doc["timing"]
-    # all-pass -> DRIVER
+    # all-pass -> PASS
     verdicts["recover"] = True
     with tempfile.TemporaryDirectory() as td:
         doc2 = R.run_suite_cert(SUITE, _fake_factory("m1"), rigor="fast", ws_root=Path(td))
-    assert doc2["verdict"]["verdict"] == "DRIVER", doc2["verdict"]
+    assert doc2["verdict"]["verdict"] == "PASS", doc2["verdict"]
     # harness_sha always present (even when not supplied)
     assert "harness_sha" in doc2 and doc2["harness_sha"] is None, doc2.get("harness_sha")
     # a subset filter runs only the named probe -> the other is missing -> PENDING

@@ -50,7 +50,7 @@ class Verdict:
 
 # Cert tiers a checkpoint may carry (failure-rate tolerance set in scoring.py). A
 # checkpoint with one of these is a CERT-GATING probe, scored at that tier's N and
-# required to certify for a DRIVER verdict. `tier=None` = diagnostic: reported, never
+# required to certify for a PASS verdict. `tier=None` = diagnostic: reported, never
 # gates. This is independent of `Checkpoint.gating`, which is a within-run STAGE gate
 # (it fails the stage's other checkpoints on that run) and says nothing about the cert.
 CERT_TIERS = ("critical", "high", "standard")

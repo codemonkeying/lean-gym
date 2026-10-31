@@ -56,7 +56,7 @@ def fs_capable_from_suite(suite) -> set:
 
 def install(suite, scoring, *, fs_capable: Optional[set] = None) -> dict:
     """Push the task's cert contract into ``scoring`` (set_module_tiers) and return the
-    tier map. ``gating`` = every cert probe (all must certify for a DRIVER verdict).
+    tier map. ``gating`` = every cert probe (all must certify for a PASS verdict).
     ``fs_capable`` defaults to the task's own fs-capable stages, intersected with its cert
     probes so escalation only ever arms on a probe the task actually runs."""
     tmap = tier_map_from_suite(suite)

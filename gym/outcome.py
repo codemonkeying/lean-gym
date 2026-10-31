@@ -188,7 +188,7 @@ def run_checkpoint_once(make_agent, suite, stage, checkpoints, ws_root: Path) ->
     `checkpoints` is the FULL co-aliased group (gym.tiers.probe_checkpoints): the tiered
     checkpoint plus every sibling sharing its probe id. The probe PASSES only if ALL of
     them pass (run_report = edited AND ran_it AND described), matching the whole-stage gate -
-    scoring only the tiered checkpoint would be a looser gate and inflate DRIVER verdicts.
+    scoring only the tiered checkpoint would be a looser gate and inflate PASS verdicts.
     Returns a scoring outcome dict. Never raises (every fault becomes a void)."""
     ws = Path(ws_root) / suite.id          # FIXED path every run (prompt-cache prefix)
     files = starting_files(suite, stage)

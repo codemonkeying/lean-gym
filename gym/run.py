@@ -1,4 +1,4 @@
-"""Drive a gym Task's cert checkpoints to a DRIVER/WORKER verdict + result doc.
+"""Drive a gym Task's cert checkpoints to a PASS/FAIL verdict + result doc.
 
 This is the gym-native replacement for the legacy cert run: install the task's cert
 contract into scoring (gym.tiers), drain every cert-gating checkpoint to its tier N

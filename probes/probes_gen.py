@@ -610,7 +610,7 @@ FOLD_INTO_GOLD = False
 
 TASKS = {"GEN_RANGESET_MUT": task_GEN_RANGESET_MUT}
 # DIAGNOSTIC ONLY: unsandboxed (agent can read reference/ + the store, same uid), so the
-# probe never gates a cert/gold verdict. Empty GATING -> scoring.verdict can't roll DRIVER.
+# probe never gates a cert/gold verdict. Empty GATING -> scoring.verdict can't roll PASS.
 DIAGNOSTIC_ONLY = True
 GATING: set = set()
 TASK_TIER = {"GEN_RANGESET_MUT": "standard"}

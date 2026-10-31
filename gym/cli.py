@@ -232,7 +232,7 @@ def _cert_suite(*, model, suite_id, rigor, n, tasks, host, provider, think,
 
 def cmd_run(args) -> int:
     """Certify a gym task: drain every cert-gating checkpoint to its tier N and roll the
-    results into a DRIVER/WORKER verdict + a result doc. Exit 0 once the run completes
+    results into a PASS/FAIL verdict + a result doc. Exit 0 once the run completes
     (whatever the verdict); 4 if the task id is unknown."""
     doc, err = _cert_suite(
         model=args.model, suite_id=args.suite, rigor=args.rigor, n=args.n,
@@ -484,7 +484,7 @@ def build_parser() -> argparse.ArgumentParser:
     ver.set_defaults(fn=cmd_version)
 
     rn = sub.add_parser("run", parents=[common],
-                        help="certify a gym suite to a DRIVER/WORKER verdict",
+                        help="certify a gym suite to a PASS/FAIL verdict",
                         epilog="example:\n  python3 -m gym run --model MODEL --suite core "
                                "--rigor smoke --json",
                         formatter_class=argparse.RawDescriptionHelpFormatter)
