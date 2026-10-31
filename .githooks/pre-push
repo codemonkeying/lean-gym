@@ -8,6 +8,8 @@
 set -eu
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
+# shellcheck source=.githooks/_clean_git_env.sh
+. ./.githooks/_clean_git_env.sh
 
 # Nothing to check on a branch deletion (refs pushed as all-zero sha). Read stdin
 # (<local ref> <local sha> <remote ref> <remote sha>) and bail if every ref is a delete.

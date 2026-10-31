@@ -13,6 +13,7 @@ into trace.meta. Custom runs reach lean-coder internals through `agent.agent`; w
 fake agent (tests) they fall back to a plain send."""
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -194,14 +195,24 @@ def _no_tool(t, ws):
 P_GIT = "Show me the recent git history of this repo. Use a tool."
 
 
-def _run_git(agent, ws, prompt):
-    g = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(ws)]
+def _init_fixture_repo(ws):
+    """git init + commit the fixture app in ws. Inherited GIT_* vars are stripped: when
+    run under a git hook (e.g. from a linked worktree) GIT_DIR points at the REAL repo,
+    and these commands would commit the fixture there instead of in ws."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    g = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.hooksPath=/dev/null",
+         "-C", str(ws)]
     try:
-        subprocess.run(["git", "init", "-q", str(ws)], check=True, capture_output=True)
-        subprocess.run(g + ["add", "-A"], check=True, capture_output=True)
-        subprocess.run(g + ["commit", "-qm", "initial app"], check=True, capture_output=True)
+        subprocess.run(["git", "init", "-q", str(ws)], check=True, capture_output=True, env=env)
+        subprocess.run(g + ["add", "-A"], check=True, capture_output=True, env=env)
+        subprocess.run(g + ["commit", "-qm", "initial app"], check=True, capture_output=True,
+                       env=env)
     except (OSError, subprocess.CalledProcessError):
         pass                                     # scorer reads only the cmd
+
+
+def _run_git(agent, ws, prompt):
+    _init_fixture_repo(ws)
     a = _lc(agent)
     known = sorted({(d.get("function") or d).get("name") for d in (a.tool_defs if a else [])})
     t = _capped(2)(agent, ws, prompt)
