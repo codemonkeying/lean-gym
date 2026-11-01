@@ -86,7 +86,7 @@ def _snapshot_files(ws):
 
 
 def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False,
-                    max_iterations=14, snapshot_files=False):
+                    max_iterations=14, snapshot_files=False, seed_board=None):
     """Run `prompt` through a REAL `lean_coder.py --agent-run` worker in the gym's own clone
     (same isolation as core's worker stage), then read the board JSON it wrote back into
     Trace.meta['board'] before the run home is removed. No spec (fake agent) -> plain send.
@@ -120,6 +120,10 @@ def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False,
         settings.setdefault("thinking", "adaptive" if spec.get("think") else "off")
     hd = home.run_home(Path(ws).name + f"-{os.getpid()}")
     home.write_config(prov, spec["model"], settings, top=top, dst=hd / ".config" / "leancoder")
+    if seed_board is not None:   # a pre-existing board state (e.g. a staged worker handoff)
+        sb = hd / ".config" / "leancoder" / "workers" / "taskboards" / f"{board_name}.json"
+        sb.parent.mkdir(parents=True, exist_ok=True)
+        sb.write_text(json.dumps(seed_board, indent=1))
     wd = Path(ws).parent / (Path(ws).name + ".board")
     wd.mkdir(exist_ok=True)
     brief, res, ckpt = wd / "brief.txt", wd / "brief.txt.result", wd / "brief.txt.checkpoint"
