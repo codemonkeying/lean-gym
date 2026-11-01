@@ -4,6 +4,7 @@ leangym is versioned in lockstep with leancoder: the version number is the leanc
 release this gym was tested against. Every result also stamps `harness_sha` (a content
 hash of the files that define a run) and the leancoder version/sha.
 ## Unreleased
+- `gym doctor`: a missing required binary now reports verdict `NOT READY` (was `FAIL`, which is the cert verdict word). Exit codes unchanged.
 
 - Cert verdict labels renamed: `verdict.verdict` is now `PASS` / `FAIL` (was
   `DRIVER` / `WORKER`). Result files written before this keep the old values.

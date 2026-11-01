@@ -73,6 +73,7 @@ gym_doc = json.loads(run("-m", "gym", "doctor", "--env-only", "--json").stdout)
 # env-only doctor must exit 0 when ready, 1 when a required binary is missing.
 rc = run("-m", "gym", "doctor", "--env-only").returncode
 check(rc == (0 if gym_doc["ok"] else 1), f"gym doctor exit {rc} vs ok={gym_doc['ok']}")
+check(gym_doc["verdict"] in ("READY", "NOT READY"), f"doctor verdict {gym_doc['verdict']!r}")
 
 # doctor WITHOUT --env-only must refuse (exit 5 + error/hint JSON on stderr), not give
 # a false all-clear while host-side checks are unimplemented.

@@ -31,9 +31,9 @@ ACCEPTANCE SAMPLER (cf. ANSI/ASQ Z1.4) / one-sided NON-INFERIORITY test powered 
 p0=0; it certifies rate < theta, it does NOT estimate/rank the rate (use diagnostic
 probe scores for ranking, never gating).
 
-VERDICT = CONJUNCTION: PASS requires ALL 8 gating probes to certify. So the
+VERDICT = CONJUNCTION: PASS requires ALL active gating probes (_ACTIVE_GATING) to certify. So the
 family-wise FALSE-CERT rate <= the per-probe alpha (an AND can only be harder to pass
-than its weakest member). It is NOT alpha^8: that would need the probes to be
+than its weakest member). It is NOT alpha^k: that would need the probes to be
 independent, and they share one model + serving stack (correlated). Either way it
 compounds in the SAFE direction - NO Bonferroni/Holm correction is appropriate (that
 controls >=1 false positive among K; this is an AND, not an OR).
@@ -517,9 +517,9 @@ def _verdict(task_results: list[TaskResult]) -> dict:
         }
     # SMOKE guard: a smoke run's tiny N forces certified=False on EVERY probe (see
     # score_probe), so the PASS-conjunction below would read "nothing certified" as
-    # "all 8 gating probes FAILED" and emit a bogus FAIL - a false negative that looks
+    # "all gating probes FAILED" and emit a bogus FAIL - a false negative that looks
     # like a real cert result (observed: a clean 30b smoke, 0 systemic fails, reported
-    # FAIL with all 8 gating probes in failed_probes). A plumbing check is not entitled
+    # FAIL with every gating probe in failed_probes). A plumbing check is not entitled
     # to ANY PASS/FAIL verdict; report SMOKE explicitly so it can never be mistaken
     # for a cert. The per-probe void/fail detail still rides in the probe results.
     if _ACTIVE_RIGOR == SMOKE_RIGOR:
