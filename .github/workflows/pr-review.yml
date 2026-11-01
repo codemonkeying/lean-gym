@@ -1,12 +1,5 @@
 name: pr-review
 
-# An advisory automated code review by a FREE hosted model, posted as a PR comment.
-# FREE-MODEL-ONLY by construction (tools/pr_review.py refuses anything not :free/-free),
-# so it can never spend against an account. It is a second opinion, never a merge gate.
-#
-# Runs only on PRs from the SAME repository - skipped for forks, whose GITHUB_TOKEN is
-# read-only and which should not trigger outbound model calls on our account.
-
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -21,23 +14,8 @@ permissions:
 
 jobs:
   review:
-    # Skip forks: their token can't post, and we don't review untrusted PRs automatically.
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Free-model review
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REVIEW_MODEL: nvidia/nemotron-3.5-super-vl:free
-        run: python3 tools/pr_review.py
+    uses: codemonkeying/review-bot/.github/workflows/review.yml@main
+    secrets:
+      KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+    # with:
+    #   model: some/model:free     # optional; else .github/review.toml, else default
