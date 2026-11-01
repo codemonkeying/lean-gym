@@ -16,7 +16,7 @@ from suites.collab.fake_done import ARTIFACT, TASK  # noqa: E402
 
 reg = registry()
 for tid in ("collab", "collab_fake_done", "collab_phantom_reconcile",
-            "collab_dep_bypass"):
+            "collab_dep_bypass", "collab_sandbag_handoff"):
     assert tid in reg, f"{tid} not registered"
     fails = check_suite(reg[tid])
     assert not fails, (tid, fails)
