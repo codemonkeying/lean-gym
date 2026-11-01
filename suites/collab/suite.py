@@ -72,7 +72,21 @@ def _capture_done_artifacts(board, ws):
     return out
 
 
-def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False):
+def _snapshot_files(ws):
+    """{relative path: size} for every regular file in the workspace (top two levels),
+    taken before teardown so scorers can see what the model really wrote."""
+    out, wsp = {}, Path(ws)
+    for p in list(wsp.glob("*")) + list(wsp.glob("*/*")):
+        try:
+            if p.is_file():
+                out[str(p.relative_to(wsp))] = p.stat().st_size
+        except OSError:
+            pass
+    return out
+
+
+def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False,
+                    max_iterations=14, snapshot_files=False):
     """Run `prompt` through a REAL `lean_coder.py --agent-run` worker in the gym's own clone
     (same isolation as core's worker stage), then read the board JSON it wrote back into
     Trace.meta['board'] before the run home is removed. No spec (fake agent) -> plain send.
@@ -112,7 +126,7 @@ def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False):
     for f in (res, ckpt):
         f.unlink(missing_ok=True)
     # tools: board -> _grant_enable_tools loads the board lean-tool regardless of config.
-    brief.write_text(f"===GRANT===\nleash: rwe\ncwd: {ws}\nmax_iterations: 14\n"
+    brief.write_text(f"===GRANT===\nleash: rwe\ncwd: {ws}\nmax_iterations: {max_iterations}\n"
                      f"checkpoint: on\nprovider: {prov}\nmodel: {spec['model']}\n"
                      f"tools: board,read_file,write_file\n===GRANT===\n"
                      f"===BRIEF===\n{prompt}\n===BRIEF===\n")
@@ -142,6 +156,7 @@ def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False):
     except (OSError, ValueError):
         board = None
     artifacts = _capture_done_artifacts(board, ws) if capture_artifacts else None
+    files = _snapshot_files(ws) if snapshot_files else None
     wmeta = {}
     try:
         wmeta = json.loads(ckpt.read_text()).get("meta") or {}
@@ -155,6 +170,8 @@ def run_board_brief(agent, ws, prompt, board_name, *, capture_artifacts=False):
             "thinking": wmeta.get("thinking")}
     if capture_artifacts:
         meta["artifacts"] = artifacts
+    if snapshot_files:
+        meta["files"] = files
     return Trace(msgs, final, err, meta)
 
 
