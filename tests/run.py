@@ -17,6 +17,7 @@ import argparse
 import os
 import signal
 import subprocess
+import tempfile
 import sys
 import time
 from pathlib import Path
@@ -93,8 +94,25 @@ def _cases(quick: bool):
     return cases
 
 
+_EMPTY_GNUPG = tempfile.mkdtemp(prefix="leangym-gnupg-")   # left in /tmp; empty
+os.chmod(_EMPTY_GNUPG, 0o700)
+
+
 def _run(argv, timeout):
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(str(ROOT / d) for d in ("", "probes", "sandbox")))
+    # The push command exports GPG_TTY + a pass-backed git credential helper. A test that
+    # touches git credentials would make gpg-agent pop pinentry on the operator's
+    # terminal (blank lines + "press Enter" under the pre-push hook). Tests are offline:
+    # no GPG tty, no credential helper, no git prompts.
+    for k in ("GPG_TTY", "PASS_ENTRY", "PASS_USER", "SSH_ASKPASS", "GIT_ASKPASS", "SSH_AUTH_SOCK"):
+        env.pop(k, None)
+    n = int(env.get("GIT_CONFIG_COUNT", "0") or 0)
+    env.update({f"GIT_CONFIG_KEY_{n}": "credential.helper", f"GIT_CONFIG_VALUE_{n}": "",
+                "GIT_CONFIG_COUNT": str(n + 1), "GIT_TERMINAL_PROMPT": "0",
+                "PINENTRY_USER_DATA": "USE_CURSES=0"})
+    env[f"GIT_CONFIG_KEY_{n + 1}"], env[f"GIT_CONFIG_VALUE_{n + 1}"] = "commit.gpgsign", "false"
+    env["GIT_CONFIG_COUNT"] = str(n + 2)
+    env["GNUPGHOME"] = _EMPTY_GNUPG         # no keys -> gpg can never ask for a passphrase
     t0 = time.monotonic()
     # stdin=DEVNULL + new session (no controlling tty): a child that reads stdin or
     # reopens /dev/tty (lean-coder's agent does) must never wait on the operator's

@@ -23,7 +23,7 @@ def check(name, cond):
 def git(*a, cwd=None, env=None):
     e = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     e.update(env or {})
-    return subprocess.run(["git", "-c", "user.name=x", "-c", "user.email=x@x.example", *a],
+    return subprocess.run(["git", "-c", "user.name=x", "-c", "user.email=x@x.example", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *a],
                           cwd=cwd, env=e, capture_output=True, text=True, check=True).stdout.strip()
 
 

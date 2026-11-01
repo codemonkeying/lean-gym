@@ -201,6 +201,7 @@ def _init_fixture_repo(ws):
     and these commands would commit the fixture there instead of in ws."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     g = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.hooksPath=/dev/null",
+         "-c", "commit.gpgsign=false",
          "-C", str(ws)]
     try:
         subprocess.run(["git", "init", "-q", str(ws)], check=True, capture_output=True, env=env)
