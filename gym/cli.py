@@ -165,7 +165,7 @@ def cmd_doctor(args) -> int:
     # never gates) - same rule and output shape as the legacy env-only check.
     fatal_fail = any((not c["ok"]) and c["fatal"] for c in checks)
     out = {"ok": not fatal_fail, "checks": checks,
-           "verdict": "FAIL" if fatal_fail else "READY"}
+           "verdict": "NOT READY" if fatal_fail else "READY"}
     _out(out, args.json, human=_human_doctor)
     return 1 if fatal_fail else 0
 
