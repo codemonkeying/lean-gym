@@ -88,33 +88,60 @@ check("reasoning unclosed not posted", ex(None, f"thinking <review>{R} and more 
 # main(): stubbed _gh / model, no network
 import os as _os
 calls = []
-def run_main(review, comments, head_sha="abc1234def"):
+pr.time.sleep = lambda s: None   # no real backoff waits in tests
+def run_main(review, reviews, head_sha="abc1234def"):
     calls.clear()
+    seen = {"n": 0}
     def gh(method, path, token, body=None, accept=None):
         calls.append((method, path, body))
-        if method == "GET" and path.endswith("/comments?per_page=100"):
-            return comments
+        if method == "GET" and "/reviews" in path:
+            return reviews
         if accept and "diff" in accept:
             return "diff --git a/x b/x\n+1\n"
         if method == "GET":
-            return {"title": "t", "head": {"sha": head_sha} if head_sha else {}}
+            return {"title": "t", "body": "desc", "head": {"sha": head_sha} if head_sha else {}}
         return {}
+    def model(*a):
+        seen["n"] += 1
+        return review(seen["n"]) if callable(review) else review
     pr._gh = gh
-    pr._review_from_model = lambda *a: review
+    pr._review_from_model = model
     _os.environ.update(GITHUB_TOKEN="t", GITHUB_REPOSITORY="o/r", PR_NUMBER="1")
     pr.main()
-    return [c for c in calls if c[0] in ("POST", "PATCH")]
-w = run_main("", [])
-check("main: empty, no prior comment -> no post", w == [])
-w = run_main("", [{"id": 7, "body": pr.MARKER + " old", "user": {"type": "Bot"}}])
-check("main: empty, prior comment -> marked stale", len(w) == 1 and w[0][0] == "PATCH"
-      and "No usable review" in w[0][2]["body"])
-w = run_main(R, [{"id": 8, "body": "quoting " + pr.MARKER, "user": {"type": "User"}}])
-check("main: human quote not patched", len(w) == 1 and w[0][0] == "POST")
-w = run_main(R, [])
-check("main: review posted with sha", len(w) == 1 and w[0][0] == "POST" and "`abc1234`" in w[0][2]["body"])
-w = run_main(R, [], head_sha=None)
-check("main: no sha -> no empty code span", "``" not in w[0][2]["body"])
+    return [c for c in calls if c[0] in ("POST", "PATCH")], seen["n"]
+w, n = run_main("", [])
+check("main: empty x3 -> retried TRIES times", n == pr.TRIES)
+check("main: empty -> visible 'no review' note posted as a review", len(w) == 1
+      and w[0][1].endswith("/pulls/1/reviews") and "No usable review" in w[0][2]["body"])
+w, n = run_main(lambda k: "" if k < 2 else R, [])
+check("main: empty then usable -> retry wins", n == 2 and R in w[0][2]["body"])
+w, n = run_main(R, [])
+check("main: review posted as COMMENT review with sha", len(w) == 1 and w[0][2]["event"] == "COMMENT"
+      and w[0][2]["commit_id"] == "abc1234def" and "`abc1234`" in w[0][2]["body"])
+w, n = run_main(R, [{"body": pr.MARKER + " old", "commit_id": "abc1234def", "user": {"type": "Bot"}}])
+check("main: same commit already reviewed -> no duplicate", w == [])
+w, n = run_main(R, [{"body": "quoting " + pr.MARKER, "commit_id": "abc1234def", "user": {"type": "User"}}])
+n0 = n
+w, n = run_main(R, [{"body": pr.MARKER + " " + pr.NO_REVIEW, "commit_id": "abc1234def", "user": {"type": "Bot"}}])
+check("main: earlier 'no review' note doesn't block a real review", len(w) == 1 and R in w[0][2]["body"])
+w, n = run_main(R, [{"body": pr.MARKER + " old", "commit_id": "abc1234def", "user": {"type": "Bot"}}])
+check("main: dedup happens before any model call", n == 0)
+import http.client as _hc
+def _boom(k):
+    raise _hc.RemoteDisconnected("dropped")
+w, n = run_main(_boom, [])
+check("main: dropped connection -> retried, note posted", n == pr.TRIES and "No usable review" in w[0][2]["body"])
+check("main: human quote doesn't suppress the review", len(w) == 1)
+w, n = run_main(R, [], head_sha=None)
+check("main: no sha -> no empty code span, no commit_id", "``" not in w[0][2]["body"] and "commit_id" not in w[0][2])
+big = "".join(f"diff --git a/f{i}.py b/f{i}.py\n" + "+x\n" * 3000 for i in range(4))
+txt, om = pr._trim_diff(big, 20000)
+check("trim: cuts at a file boundary", txt.endswith("+x\n") and txt.count("diff --git") >= 1 and om)
+check("trim: omitted files listed", all(o.startswith("f") for o in om))
+import urllib.error as _ue
+e429 = _ue.HTTPError("u", 429, "rl", {"Retry-After": "7"}, None)
+check("backoff honours Retry-After", pr._backoff(e429, 1) == 7)
+check("backoff default grows", pr._backoff(ValueError(), 1) == 20 and pr._backoff(ValueError(), 2) == 60)
 
 print("ALL PASS" if not FAIL else f"FAILED: {FAIL}")
 sys.exit(1 if FAIL else 0)

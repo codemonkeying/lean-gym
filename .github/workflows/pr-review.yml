@@ -11,6 +11,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -20,6 +24,7 @@ jobs:
     # Skip forks: their token can't post, and we don't review untrusted PRs automatically.
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,5 +39,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          REVIEW_MODEL: nvidia/nemotron-3.5-lightning:free
+          REVIEW_MODEL: nvidia/nemotron-3.5-super-vl:free
         run: python3 tools/pr_review.py
